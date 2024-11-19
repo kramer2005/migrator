@@ -2,38 +2,43 @@ use std::fs;
 
 use sqlx::{postgres::PgPoolOptions, Acquire, Pool, Postgres};
 
-use crate::{parser::Cli, utils::{config::Config, operations::add}};
+use crate::{
+    parser::Cli,
+    utils::{config::Config, operations::add},
+};
 
 pub async fn transaction(pool: Pool<Postgres>, query: &str) -> Result<(), sqlx::Error> {
     let mut conn = pool.acquire().await.unwrap();
     let mut tx = conn.begin().await.unwrap();
 
-    let result = sqlx::query(query)
-        .execute(&mut *tx)
-        .await;
-
-    if result.is_err() {
-        tx.rollback().await.unwrap();
-        return Err(result.unwrap_err());
+    match sqlx::query(query).execute(&mut *tx).await {
+        Ok(_) => {
+            tx.commit().await.unwrap();
+            conn.close().await.unwrap();
+            return Ok(());
+        }
+        Err(e) => {
+            tx.rollback().await.unwrap();
+            conn.close().await.unwrap();
+            return Err(e);
+        }
     }
-
-    tx.commit().await.unwrap();
-    conn.close().await.unwrap();
-
-    Ok(())
 }
 
-pub async fn check(pool: Pool<Postgres>, cli: &Cli, config: &Config, print: bool) -> Option<String> {
+pub async fn check(
+    pool: Pool<Postgres>,
+    cli: &Cli,
+    config: &Config,
+    print: bool,
+) -> Option<String> {
     let db: String = config.db_type.clone().unwrap().into();
     let path = format!("{}/{}", cli.base_path(), db);
     let plan = read_plan(cli, config);
 
-    for query in plan {        
-        let verify = fs::read_to_string(format!("{}/verify/{}.sql", path, query)).unwrap();
+    for query in plan {
+        let sql = fs::read_to_string(format!("{}/verify/{}.sql", path, query)).unwrap();
 
-        let result = sqlx::query(&verify)
-            .execute(&pool)
-            .await;
+        let result = sqlx::query(&sql).execute(&pool).await;
 
         if result.is_err() {
             return Some(query);
@@ -79,7 +84,7 @@ pub async fn revert(pool: Pool<Postgres>, cli: &Cli, config: &Config, checkpoint
         plan = plan.split_off(index + 1);
     }
 
-    for query in plan {        
+    for query in plan {
         let revert = fs::read_to_string(format!("{}/revert/{}.sql", path, query)).unwrap();
 
         transaction(pool.clone(), &revert).await.unwrap();
@@ -121,12 +126,7 @@ pub async fn operate(config: Config) {
     }
 
     if cli.args[1] == "check" {
-        let result = check(
-            connect(&config).await.unwrap(),
-            &cli,
-            &config,
-            true,
-        ).await;
+        let result = check(connect(&config).await.unwrap(), &cli, &config, true).await;
 
         if result.is_some() {
             println!("Migration failed: {}", result.unwrap());
@@ -138,42 +138,22 @@ pub async fn operate(config: Config) {
     }
 
     if cli.args[1] == "deploy" {
-        let checkpoint = check(
-            connect(&config).await.unwrap(),
-            &cli,
-            &config,
-            false,
-        ).await;
+        let checkpoint = check(connect(&config).await.unwrap(), &cli, &config, false).await;
 
         if checkpoint.is_none() {
             println!("Nothing to deploy");
             return;
         }
 
-        deploy(
-            connect(&config).await.unwrap(),
-            &cli,
-            &config,
-            checkpoint,
-        ).await;
+        deploy(connect(&config).await.unwrap(), &cli, &config, checkpoint).await;
 
         return;
     }
 
     if cli.args[1] == "revert" {
-        let checkpoint = check(
-            connect(&config).await.unwrap(),
-            &cli,
-            &config,
-            false,
-        ).await;
+        let checkpoint = check(connect(&config).await.unwrap(), &cli, &config, false).await;
 
-        revert(
-            connect(&config).await.unwrap(),
-            &cli,
-            &config,
-            checkpoint,
-        ).await;
+        revert(connect(&config).await.unwrap(), &cli, &config, checkpoint).await;
 
         return;
     }
