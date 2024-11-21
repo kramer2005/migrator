@@ -1,3 +1,5 @@
+use std::env;
+
 #[derive(Debug)]
 pub struct LongFlag {
     pub name: String,
@@ -76,7 +78,13 @@ impl Cli {
     }
 
     pub fn base_path(&self) -> String {
-        let mut base_path = String::from("./db");
+        let is_docker = env::var("DOCKER").is_ok();
+        let default_path = match is_docker {
+            true => "/tmp/db",
+            false => "./db",
+        };
+
+        let mut base_path = String::from(default_path);
 
         if let Some(flag) = self.get_long_flag("--base-path") {
             base_path = flag.value.clone();

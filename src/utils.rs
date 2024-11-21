@@ -53,7 +53,7 @@ impl Folder {
 }
 
 pub fn init(base_path: &str) {
-    println!("Initializing project at {}", base_path);
+    println!("Initializing project...");
 
     // Create migrations folder
     let mut migrations = Folder::new("");
