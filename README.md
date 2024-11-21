@@ -31,7 +31,7 @@ chmod +x migrator
 The second one is running the docker image:
 
 ```bash
-curl -sL https://github.com/kramer2005/migrator/releases/download/v0.1.0/migrator.sh | bash -s -- --help
+curl -sL https://bit.ly/kdev-migrator | bash -s -- --help
 ```
 
 You can replace `--help` with any other command.
